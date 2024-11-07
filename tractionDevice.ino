@@ -299,7 +299,7 @@ void Motor::startHoming() {
 
         int32_t homingSpeed = -100; // Negative speed towards homing switch (set to 100 RPM)
         Serial.println(F("Homing speed is "));
-        Serial.println(F(homingSpeed));
+        Serial.println((homingSpeed));
         SDOwrite(0x60FF, 0x00, homingSpeed, 4);
         setControlWord(0x0F); // Enable operation
         isVelocityMoveFlag = true;
