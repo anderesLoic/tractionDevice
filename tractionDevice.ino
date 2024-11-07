@@ -39,14 +39,12 @@ enum ArduinoState {
     STATE_STOP_MEASURE,          // 7
     STATE_RETURN_TO_CUSTOM,      // 8
     STATE_PAUSE,                 // 9
-    STATE_ADJUSTING,              // 10
-    STATE_ALERT //ALERT switch touched
+    STATE_ADJUSTING,             // 10
+    STATE_ALERT                  // 11
 };
 
 ArduinoState currentState = STATE_STANDBY;
 ArduinoState previousState = STATE_SETUP;
-
-
 
 // ===============================
 // ======== Command Handling =====
@@ -78,15 +76,13 @@ public:
         LoadCell.begin();
         long stabilizingtime = 2000; // Stabilizing time after power-up
         LoadCell.start(stabilizingtime, false);
-        //LoadCell.setCalFactor(22295.50); // Set the calibration factor     previous
-        //LoadCell.setCalFactor(21742.67); // Set the calibration factor     previous
         LoadCell.setCalFactor(17792.45);
         Serial.println("LoadCell initialized");
     }
 
     void measureWeight() {
         if (LoadCell.update()) {  // 'update()' returns true when new data is available
-            currentWeight = LoadCell.getData() -468.52 + 1.13; //- 371.21-1.80 -9.00;
+            currentWeight = LoadCell.getData() - 468.52 + 1.13;
         }
     }
 
@@ -97,11 +93,11 @@ public:
     void simulateWeight(double weight) {
         currentWeight = weight;
     }
-
 };
 
 // ===============================
 // ======== Motor Class ===========
+// ===============================
 /*
  * Motor class handles all motor-related operations including homing,
  * moving to positions, and continuous movement. It communicates with
@@ -198,16 +194,15 @@ void Motor::configureMotorParameters() {
         Serial.println("Max Speed set to 100.");
     }
 
-      // Set Profile Velocity (0x6081:00) to 500
-  if (SDOwrite(0x6081, 0x00, 500, 4)) {
-      Serial.println("Profile Velocity set to 500.");
-  }
+    // Set Profile Velocity (0x6081:00) to 500
+    if (SDOwrite(0x6081, 0x00, 500, 4)) {
+        Serial.println("Profile Velocity set to 500.");
+    }
 
-  // Set Profile Acceleration (0x6083:00) to 50
-  if (SDOwrite(0x6083, 0x00, 50, 4)) {
-      Serial.println("Profile Acceleration set to 50.");
-  }
-
+    // Set Profile Acceleration (0x6083:00) to 50
+    if (SDOwrite(0x6083, 0x00, 50, 4)) {
+        Serial.println("Profile Acceleration set to 50.");
+    }
 
     // Set Max Acceleration (0x60C5:00) to 5000
     if (SDOwrite(0x60C5, 0x00, 5000, 4)) {
@@ -297,7 +292,7 @@ void Motor::startHoming() {
         setMode(3); // Profile Velocity Mode
         enableMotor();
 
-        int32_t homingSpeed = -100; // Negative speed towards homing switch (set to 100 RPM)
+        int32_t homingSpeed = -100; // Negative speed towards homing switch
         Serial.println(F("Homing speed is "));
         Serial.println((homingSpeed));
         SDOwrite(0x60FF, 0x00, homingSpeed, 4);
@@ -580,11 +575,11 @@ private:
     Balance balance;         // Balance object to handle weight measurements
     bool pullingToWeight = false;  // Flag to indicate if the motor is pulling until a target weight
     double targetWeight = 0.0;     // Target weight to reach
-    double initialWeight = 0.0;    // The initial weight of the patient    
-    bool initialWeightSet = false; // Flag to check if initial weight is set        
+    double initialWeight = 0.0;    // The initial weight of the patient
     float percentageDecrease = 0.0; // Percentage decrease to achieve
     bool isHoming = false;
     bool homingCompleted = false;
+    bool initialWeightSet = false;  // Flag to indicate if initial weight has been set
 
     bool currentMaxLimitSwitchState = false;
     bool currentMinLimitSwitchState = false;
@@ -592,25 +587,21 @@ private:
 
 public:
     int32_t minPosition = 2000;    // Minimum position set to +2000
-    int32_t maxPosition = 200000;   // Maximum position set to +10000
-    int32_t operatingSpeed = 30;   // Set operating speed to 50 RPM for TENSIONING and START
+    int32_t maxPosition = 200000;  // Maximum position set to +200000
+    int32_t operatingSpeed = 30;   // Set operating speed to 30 RPM
 
-    bool isVelocityMove = false;    // Now public
+    bool isVelocityMove = false;   // Now public
 
     ScissorLift(Motor& motorObj, uint8_t doutPin, uint8_t sckPin)
         : motor(motorObj), balance(doutPin, sckPin) {}
 
-
-    bool getCurrentMaxLimitSwitchState()
-    {
-      return currentMaxLimitSwitchState;
+    bool getCurrentMaxLimitSwitchState() {
+        return currentMaxLimitSwitchState;
     }
 
-    bool getCurrentMinLimitSwitchState()
-    {
-      return currentMinLimitSwitchState;
+    bool getCurrentMinLimitSwitchState() {
+        return currentMinLimitSwitchState;
     }
-
 
     void initialize() {
         balance.initialize();  // Initialize the balance (HX711)
@@ -622,14 +613,14 @@ public:
         if (!isHoming) {
             motor.startHoming();
             isHoming = true;
-             homingCompleted = false;
+            homingCompleted = false;
             Serial.println(F("Homing initiated."));
         }
     }
 
     // Check if homing is completed
     bool isHomed() const {
-       return homingCompleted;
+        return homingCompleted;
     }
 
     // Send motor to target position
@@ -669,43 +660,42 @@ public:
             return;
         }
 
-        percentageDecrease = percentage;
+        if (!initialWeightSet) {
+            Serial.println("Error: Initial weight not set. Please use WEIGHT command to measure initial weight.");
+            return;
+        }
 
-        // Set initial weight only if it hasn't been set
-          if (initialWeightSet == false) {
-            initialWeight = balance.getWeight();
-            Serial.println(F("we are in initial weight state."));
-            initialWeightSet = true;  // Mark initial weight as set
-            Serial.println(F("initial weight state is true"));
-           }
-        //initialWeight = balance.getWeight();
+        percentageDecrease = percentage;
         targetWeight = initialWeight * (1.0 - percentageDecrease / 100.0);
-        Serial.print("target weight is set to ");
-        Serial.print(targetWeight);
+        Serial.print("Target weight is set to ");
+        Serial.println(targetWeight);
         pullingToWeight = true;
         isVelocityMove = true;
-        motor.startVelocityMove(-operatingSpeed); // Start moving in negative direction at 50 RPM
+        motor.startVelocityMove(-operatingSpeed); // Start moving in negative direction at operating speed
         Serial.print("Pulling until weight decreases by ");
         Serial.print(percentage);
         Serial.println("%");
     }
 
-   bool resetInitialWeight() {
-    initialWeightSet = false;
-    return false;  // Allows initial weight to be re-measured
-    Serial.print("WeightSet ");
-    Serial.print(initialWeightSet);
+    // Set initial weight
+    void setInitialWeight() {
+        initialWeight = balance.getWeight();
+        initialWeightSet = true;
+        Serial.print("Initial weight measured and set to: ");
+        Serial.println(initialWeight);
     }
 
-    // Check if the target weight is reached and stop the motor if so
+    // Reset initial weight flag
+    void resetInitialWeight() {
+        initialWeightSet = false;
+        initialWeight = 0.0;
+        Serial.println("Initial weight has been reset.");
+    }
+
+    // Check if target weight is reached and stop the motor if so
     bool hasReachedWeight() {
         if (pullingToWeight) {
-          Serial.println("getWeight: ");
-
-          Serial.println("TargetWeight");
-          Serial.println(targetWeight);
             if (balance.getWeight() <= targetWeight) {
-                Serial.println("we are checking if getweight<target weight");
                 motor.stopMotor();  // Stop the motor when target weight is reached
                 pullingToWeight = false;
                 isVelocityMove = false;
@@ -739,22 +729,17 @@ public:
             sendMotorTo(minPosition);
         }
 
-        //ALERT SWITCH DETECTION
-        // Read the current state of the max level limit switch
+        // ALERT SWITCH DETECTION
         currentMaxLimitSwitchState = !digitalRead(maxLevelLimitSwitchPin);
-        // Read the current state of the min level (homing) limit switch
         currentMinLimitSwitchState = !digitalRead(homingSwitchPin);
-        // If not in homing
-        //if ((currentState != STATE_HOMING) && (currentMaxLimitSwitchState ==1 || currentMinLimitSwitchState == 1) && (currentState != STATE_ALERT) && (currentState != STATE_ADJUSTING && previousState != STATE_ALERT)) 
-        if ((currentState != STATE_HOMING) && (currentMaxLimitSwitchState ==1 || currentMinLimitSwitchState == 1) && (currentState != STATE_ALERT)) 
-        {
+
+        if ((currentState != STATE_HOMING) && (currentMaxLimitSwitchState == 1 || currentMinLimitSwitchState == 1) && (currentState != STATE_ALERT)) {
             stopMotor();
             previousState = currentState;
             currentState = STATE_ALERT;
         }
 
-        if(currentMaxLimitSwitchState ==0 && currentMinLimitSwitchState == 0 && currentState == STATE_ALERT)
-        {
+        if (currentMaxLimitSwitchState == 0 && currentMinLimitSwitchState == 0 && currentState == STATE_ALERT) {
             currentState = previousState;
             previousState = STATE_ALERT;
         }
@@ -798,7 +783,7 @@ public:
     }
 
     // Start continuous movement
-    void startContinuousMove(int32_t speed) {        
+    void startContinuousMove(int32_t speed) {
         motor.startVelocityMove(speed);
         isVelocityMove = true;
     }
@@ -847,6 +832,7 @@ void setup() {
     Serial.println("DOWN_STEP");
     Serial.println("DONE"); // Replaced 'HIGH' with 'DONE'
     Serial.println("STOP");
+    Serial.println("WEIGHT");
     Serial.println("-----------------------------");
     Serial.println("Enter commands followed by Enter.");
 }
@@ -900,27 +886,27 @@ void loop() {
     if (command.length() > 0) { // Process only if there's a command
         if (command == "HOMING") {
             // Allow homing to be re-initiated at any time
-            if(currentState != STATE_ALERT)
-            {
-              liftInstance.performHoming();
-              currentState = STATE_HOMING;
-              command = "";
+            if (currentState != STATE_ALERT) {
+                liftInstance.performHoming();
+                currentState = STATE_HOMING;
+                command = "";
             }
         }
         else if (command == "SETUP") {
             if (liftInstance.isHomed() && currentState != STATE_ALERT) {
                 liftInstance.sendMotorTo(liftInstance.maxPosition);
-                liftInstance.resetInitialWeight();
                 currentState = STATE_SETUP;
             } else {
                 Serial.println(F("Error: Homing not completed or switch is active. Cannot execute SETUP command."));
             }
             command = "";
         }
-         else if (command.startsWith("WEIGHT")) {
-            if (liftInstance.isHomed() && currentState != STATE_ALERT) 
-            {
-             
+        else if (command.startsWith("WEIGHT")) {
+            if (liftInstance.isHomed() && currentState != STATE_ALERT) {
+                liftInstance.setInitialWeight();
+                Serial.println("Initial weight has been measured and set.");
+            } else {
+                Serial.println(F("Error: Homing not completed or switch is active. Cannot execute WEIGHT command."));
             }
             command = "";
         }
@@ -941,11 +927,8 @@ void loop() {
         else if (command.startsWith("START")) {
             if (liftInstance.isHomed() && currentState != STATE_ALERT) {
                 float percentage = param.toFloat();
-                Serial.println(F("Start is ok"));
-
                 if (percentage > 0 && percentage < 100) {
                     liftInstance.pullUntilPercentageDecrease(percentage);
-                    Serial.println(F("we have percentage"));
                     currentState = STATE_TRACTION;
                 } else {
                     Serial.println("Invalid percentage for START. Must be between 0 and 100.");
@@ -966,10 +949,10 @@ void loop() {
         }
         else if (command == "MID") {
             if (liftInstance.isHomed() && currentState != STATE_ALERT) {
-                liftInstance.sendMotorTo((liftInstance.minPosition + liftInstance.maxPosition)/2);
+                liftInstance.sendMotorTo((liftInstance.minPosition + liftInstance.maxPosition) / 2);
                 currentState = STATE_SETUP;
             } else {
-                Serial.println(F("Error: Homing not completed or switch active. Cannot execute MIN command."));
+                Serial.println(F("Error: Homing not completed or switch active. Cannot execute MID command."));
             }
             command = "";
         }
@@ -983,27 +966,25 @@ void loop() {
             command = "";
         }
         else if (command == "UP") {
-                if(liftInstance.getCurrentMaxLimitSwitchState() == 0)
-                {
-                  previousState = currentState;
-                  currentState = STATE_ADJUSTING;
-                  liftInstance.startContinuousMove(liftInstance.operatingSpeed); // Negative direction
-                  command = "";
-                }
+            if (liftInstance.getCurrentMaxLimitSwitchState() == 0) {
+                previousState = currentState;
+                currentState = STATE_ADJUSTING;
+                liftInstance.startContinuousMove(liftInstance.operatingSpeed); // Positive direction
+                command = "";
+            }
         }
         else if (command == "DOWN") {
-                if(liftInstance.getCurrentMinLimitSwitchState() == 0)
-                {
-                  previousState = currentState;
-                  currentState = STATE_ADJUSTING;
-                  liftInstance.startContinuousMove(-liftInstance.operatingSpeed); // Negative direction
-                  command = "";
-                }
+            if (liftInstance.getCurrentMinLimitSwitchState() == 0) {
+                previousState = currentState;
+                currentState = STATE_ADJUSTING;
+                liftInstance.startContinuousMove(-liftInstance.operatingSpeed); // Negative direction
+                command = "";
+            }
         }
         else if (command == "DONE") { // 'DONE'
             if (currentState == STATE_TENSIONING || currentState == STATE_TRACTION) {
                 liftInstance.sendMotorTo(liftInstance.maxPosition); // Return to setup position
-                liftInstance.resetInitialWeight();  //InitialWeight could be any weight
+                liftInstance.resetInitialWeight();  // Reset initial weight flag
                 currentState = STATE_RETURN_TO_CUSTOM;
             } else {
                 Serial.println("Error: DONE command only valid after TENSIONING or START.");
@@ -1127,8 +1108,5 @@ void loop() {
         Serial.print("M:");
         Serial.print(liftInstance.getPos()); // Send relative motor position
         Serial.println(); // End of line to separate messages
-
-
-
     }
 }
