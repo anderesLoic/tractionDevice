@@ -68,6 +68,7 @@ class Balance {
 private:
     HX711_ADC LoadCell;
     float currentWeight;
+    float patientWeight;
 
 public:
     Balance(uint8_t doutPin, uint8_t sckPin)
@@ -78,13 +79,14 @@ public:
         long stabilizingtime = 2000; // Stabilizing time after power-up
         LoadCell.start(stabilizingtime, false);
         //LoadCell.setCalFactor(22295.50); // Set the calibration factor     previous
-        LoadCell.setCalFactor(21742.67); // Set the calibration factor     previous
+        //LoadCell.setCalFactor(21742.67); // Set the calibration factor     previous
+        LoadCell.setCalFactor(17792.45);
         Serial.println("LoadCell initialized");
     }
 
     void measureWeight() {
         if (LoadCell.update()) {  // 'update()' returns true when new data is available
-            currentWeight = LoadCell.getData() - 371.21-1.82 -9.45;
+            currentWeight = LoadCell.getData() -468.52 + 1.13; //- 371.21-1.80 -9.00;
         }
     }
 
@@ -95,6 +97,7 @@ public:
     void simulateWeight(double weight) {
         currentWeight = weight;
     }
+
 };
 
 // ===============================
@@ -295,6 +298,8 @@ void Motor::startHoming() {
         enableMotor();
 
         int32_t homingSpeed = -100; // Negative speed towards homing switch (set to 100 RPM)
+        Serial.println(F("Homing speed is "));
+        Serial.println(F(homingSpeed));
         SDOwrite(0x60FF, 0x00, homingSpeed, 4);
         setControlWord(0x0F); // Enable operation
         isVelocityMoveFlag = true;
@@ -575,7 +580,8 @@ private:
     Balance balance;         // Balance object to handle weight measurements
     bool pullingToWeight = false;  // Flag to indicate if the motor is pulling until a target weight
     double targetWeight = 0.0;     // Target weight to reach
-    double initialWeight = 0.0;    // The initial weight of the patient
+    double initialWeight = 0.0;    // The initial weight of the patient    
+    bool initialWeightSet = false; // Flag to check if initial weight is set        
     float percentageDecrease = 0.0; // Percentage decrease to achieve
     bool isHoming = false;
     bool homingCompleted = false;
@@ -664,8 +670,18 @@ public:
         }
 
         percentageDecrease = percentage;
-        initialWeight = balance.getWeight();
+
+        // Set initial weight only if it hasn't been set
+          if (initialWeightSet == false) {
+            initialWeight = balance.getWeight();
+            Serial.println(F("we are in initial weight state."));
+            initialWeightSet = true;  // Mark initial weight as set
+            Serial.println(F("initial weight state is true"));
+           }
+        //initialWeight = balance.getWeight();
         targetWeight = initialWeight * (1.0 - percentageDecrease / 100.0);
+        Serial.print("target weight is set to ");
+        Serial.print(targetWeight);
         pullingToWeight = true;
         isVelocityMove = true;
         motor.startVelocityMove(-operatingSpeed); // Start moving in negative direction at 50 RPM
@@ -674,10 +690,22 @@ public:
         Serial.println("%");
     }
 
+   bool resetInitialWeight() {
+    initialWeightSet = false;
+    return false;  // Allows initial weight to be re-measured
+    Serial.print("WeightSet ");
+    Serial.print(initialWeightSet);
+    }
+
     // Check if the target weight is reached and stop the motor if so
     bool hasReachedWeight() {
         if (pullingToWeight) {
+          Serial.println("getWeight: ");
+
+          Serial.println("TargetWeight");
+          Serial.println(targetWeight);
             if (balance.getWeight() <= targetWeight) {
+                Serial.println("we are checking if getweight<target weight");
                 motor.stopMotor();  // Stop the motor when target weight is reached
                 pullingToWeight = false;
                 isVelocityMove = false;
@@ -731,14 +759,6 @@ public:
             previousState = STATE_ALERT;
         }
 
-
-
-
-
-
-
-
-
         // Check if target weight is achieved
         if (pullingToWeight && hasReachedWeight()) {
             // Transition handled in hasReachedWeight()
@@ -766,11 +786,11 @@ public:
 
         int32_t position = getPos();
         if (isVelocityMove) {
-            if (position <= minPosition) {
+            if (position < minPosition) {
                 sendMotorTo(minPosition);
                 Serial.println("Motor reached minimum position and stopped.");
             }
-            if (position >= maxPosition) {
+            if (position > maxPosition) {
                 sendMotorTo(maxPosition);
                 Serial.println("Motor reached maximum position and stopped.");
             }
@@ -890,6 +910,7 @@ void loop() {
         else if (command == "SETUP") {
             if (liftInstance.isHomed() && currentState != STATE_ALERT) {
                 liftInstance.sendMotorTo(liftInstance.maxPosition);
+                liftInstance.resetInitialWeight();
                 currentState = STATE_SETUP;
             } else {
                 Serial.println(F("Error: Homing not completed or switch is active. Cannot execute SETUP command."));
@@ -913,8 +934,11 @@ void loop() {
         else if (command.startsWith("START")) {
             if (liftInstance.isHomed() && currentState != STATE_ALERT) {
                 float percentage = param.toFloat();
+                Serial.println(F("Start is ok"));
+
                 if (percentage > 0 && percentage < 100) {
                     liftInstance.pullUntilPercentageDecrease(percentage);
+                    Serial.println(F("we have percentage"));
                     currentState = STATE_TRACTION;
                 } else {
                     Serial.println("Invalid percentage for START. Must be between 0 and 100.");
@@ -971,7 +995,8 @@ void loop() {
         }
         else if (command == "DONE") { // 'DONE'
             if (currentState == STATE_TENSIONING || currentState == STATE_TRACTION) {
-                liftInstance.sendMotorTo(liftInstance.maxPosition);  // Return to setup position
+                liftInstance.sendMotorTo(liftInstance.maxPosition); // Return to setup position
+                liftInstance.resetInitialWeight();  //InitialWeight could be any weight
                 currentState = STATE_RETURN_TO_CUSTOM;
             } else {
                 Serial.println("Error: DONE command only valid after TENSIONING or START.");
