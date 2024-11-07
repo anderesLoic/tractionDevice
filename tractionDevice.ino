@@ -917,6 +917,13 @@ void loop() {
             }
             command = "";
         }
+         else if (command.startsWith("WEIGHT")) {
+            if (liftInstance.isHomed() && currentState != STATE_ALERT) 
+            {
+             
+            }
+            command = "";
+        }
         else if (command.startsWith("TENSIONING")) {
             if (liftInstance.isHomed() && currentState != STATE_ALERT) {
                 float percentage = param.toFloat();
